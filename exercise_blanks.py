@@ -114,10 +114,16 @@ def get_w2v_average(sent, word_to_vec, embedding_dim):
     :return The average embedding vector as numpy ndarray.
     """
     embeddings = []
+    unknown_count = 0
     for word_node in sent.get_leaves():
         word = word_node.text[0]
         if word in word_to_vec:
             embeddings.append(word_to_vec[word])
+        else:
+            unknown_count += 1
+
+    total_words = len(sent.get_leaves())
+    print(f"Unknown words: {unknown_count}/{total_words} ({unknown_count / total_words:.2%})")
 
     if embeddings:
         return np.mean(embeddings, axis=0)
@@ -180,7 +186,25 @@ def sentence_to_embedding(sent, word_to_vec, seq_len, embedding_dim=300):
     :param embedding_dim: the dimension of the w2v embedding
     :return: numpy ndarray of shape (seq_len, embedding_dim) with the representation of the sentence
     """
-    return
+    """
+    Map the given sentence to its word embeddings, with padding or truncation to seq_len.
+    """
+
+    embeddings = []
+    for word_node in sent.get_leaves():
+        word = word_node.text[0]
+        if word in word_to_vec:
+            embeddings.append(word_to_vec[word])
+        else:
+            embeddings.append(np.zeros(embedding_dim))  # Unknown words are zero vectors
+
+    # Pad or truncate to the required sequence length
+    if len(embeddings) > seq_len:
+        embeddings = embeddings[:seq_len]
+    else:
+        embeddings.extend([np.zeros(embedding_dim)] * (seq_len - len(embeddings)))
+
+    return np.array(embeddings)
 
 
 class OnlineDataset(Dataset):
@@ -294,13 +318,46 @@ class LSTM(nn.Module):
     An LSTM for sentiment analysis with architecture as described in the exercise description.
     """
     def __init__(self, embedding_dim, hidden_dim, n_layers, dropout):
-        return
+        super(LSTM, self).__init__()
+        self.embedding_dim = embedding_dim
+        self.hidden_dim = hidden_dim
+        self.n_layers = n_layers
+
+        # Define the Bi-directional LSTM layer
+        self.lstm = nn.LSTM(
+            input_size=embedding_dim,
+            hidden_size=hidden_dim,
+            num_layers=n_layers,
+            bidirectional=True,
+            batch_first=True
+        )
+
+        # Define a dropout layer
+        self.dropout = nn.Dropout(dropout)
+
+        # Define the final linear layer
+        self.fc = nn.Linear(hidden_dim * 2, 1)  # Bi-directional, hence *2
 
     def forward(self, text):
-        return
+        # Pass the input through the LSTM layer
+        lstm_out, _ = self.lstm(text)
+
+        # Take the final hidden states of both directions
+        forward_hidden = lstm_out[:, -1, :self.hidden_dim]
+        backward_hidden = lstm_out[:, 0, self.hidden_dim:]
+
+        # Concatenate forward and backward hidden states
+        final_hidden = torch.cat((forward_hidden, backward_hidden), dim=1)
+
+        # Apply dropout and the fully connected layer
+        output = self.fc(self.dropout(final_hidden))
+        return output
 
     def predict(self, text):
-        return
+        # Predict probabilities
+        with torch.no_grad():
+            logits = self.forward(text)
+            return torch.sigmoid(logits)
 
 
 class LogLinear(nn.Module):
@@ -325,11 +382,8 @@ class LogLinear(nn.Module):
         :param x: Input tensor of shape (batch_size, embedding_dim)
         :return: Tensor of shape (batch_size, 1) representing probabilities
         """
-        # Linear transformation
         logits = self.linear(x)
-        # Sigmoid activation
-        probabilities = self.sigmoid(logits)
-        return probabilities
+        return logits
 
     def predict(self, x):
         """
@@ -380,8 +434,8 @@ def train_epoch(model, data_iterator, optimizer, criterion):
         y_batch = y_batch.float()
 
         optimizer.zero_grad()
-        predictions = model(x_batch).squeeze(1)  # Get predictions and remove extra dimension
-        loss = criterion(predictions, y_batch)
+        predictions = torch.sigmoid(model(x_batch).squeeze(1))
+        loss = criterion(model(x_batch).squeeze(1), y_batch)
         acc = binary_accuracy(predictions, y_batch)
 
         loss.backward()
@@ -470,7 +524,7 @@ def train_log_linear_with_one_hot():
     # Step 2: Initialize the model, optimizer, and loss function
     vocab_size = len(data_manager.sentiment_dataset.get_word_counts())
     model = LogLinear(vocab_size)
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0.001)
     criterion = nn.BCELoss()  # Binary Cross-Entropy Loss for binary classification
 
     # Step 3: Train the model
@@ -561,10 +615,37 @@ def train_lstm_with_w2v():
     """
     Here comes your code for training and evaluation of the LSTM model.
     """
-    return
+    # Initialize DataManager
+    data_manager = DataManager(data_type="w2v_sequence", batch_size=64, embedding_dim=300)
+    train_iterator = data_manager.get_torch_iterator("train")
+    val_iterator = data_manager.get_torch_iterator("val")
+
+    # Define model, optimizer, and loss function
+    device = get_available_device()
+    model = LSTM(embedding_dim=300, hidden_dim=100, n_layers=1, dropout=0.5).to(device)
+    optimizer = optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0001)
+    criterion = nn.BCEWithLogitsLoss().to(device)  # Combines sigmoid and binary cross-entropy
+
+    # Train the model for 4 epochs
+    n_epochs = 4
+    for epoch in range(n_epochs):
+        train_loss, train_acc = train_epoch(model, train_iterator, optimizer, criterion)
+        val_loss, val_acc = evaluate(model, val_iterator, criterion)
+
+        print(f"Epoch {epoch + 1}/{n_epochs}")
+        print(f"Train Loss: {train_loss:.4f}, Train Accuracy: {train_acc:.4f}")
+        print(f"Validation Loss: {val_loss:.4f}, Validation Accuracy: {val_acc:.4f}")
+        print("-" * 50)
+
+    # Test the model on the test set
+    test_iterator = data_manager.get_torch_iterator("test")
+    test_loss, test_acc = evaluate(model, test_iterator, criterion)
+
+    print("Final Test Results")
+    print(f"Test Loss: {test_loss:.4f}, Test Accuracy: {test_acc:.4f}")
 
 
 if __name__ == '__main__':
     # train_log_linear_with_one_hot()
-    train_log_linear_with_w2v()
-    # train_lstm_with_w2v()
+    # train_log_linear_with_w2v()
+    train_lstm_with_w2v()
