@@ -361,29 +361,15 @@ class LSTM(nn.Module):
 
 
 class LogLinear(nn.Module):
-    """
-    general class for the log-linear models for sentiment analysis.
-    """
-
     def __init__(self, embedding_dim):
-        """
-        Initialize the model.
-        :param embedding_dim: Dimension of the input embeddings (equal to the vocabulary size for one-hot embeddings).
-        """
         super(LogLinear, self).__init__()
-        # Define a single linear layer
-        self.linear = nn.Linear(embedding_dim, 1)  # Maps input to a single output value for binary classification
-        # Define the sigmoid activation
+        self.linear = nn.Linear(embedding_dim, 1)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        """
-        Perform a forward pass through the model.
-        :param x: Input tensor of shape (batch_size, embedding_dim)
-        :return: Tensor of shape (batch_size, 1) representing probabilities
-        """
         logits = self.linear(x)
-        return logits
+        return self.sigmoid(logits)
+
 
     def predict(self, x):
         """
@@ -658,6 +644,6 @@ def train_lstm_with_w2v():
 
 
 if __name__ == '__main__':
-    # train_log_linear_with_one_hot()
+    train_log_linear_with_one_hot()
     # train_log_linear_with_w2v()
-    train_lstm_with_w2v()
+    # train_lstm_with_w2v()
