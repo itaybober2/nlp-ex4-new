@@ -609,12 +609,7 @@ def train_log_linear_with_w2v():
 
 
 
-
-
 def train_lstm_with_w2v():
-    """
-    Here comes your code for training and evaluation of the LSTM model.
-    """
     # Initialize DataManager
     data_manager = DataManager(data_type="w2v_sequence", batch_size=64, embedding_dim=300)
     train_iterator = data_manager.get_torch_iterator("train")
@@ -643,6 +638,23 @@ def train_lstm_with_w2v():
 
     print("Final Test Results")
     print(f"Test Loss: {test_loss:.4f}, Test Accuracy: {test_acc:.4f}")
+
+    # Evaluate on special subsets
+    print("\nEvaluating on special subsets...")
+    special_subsets = {
+        "Negated Polarity": get_negated_polarity_examples(data_manager.sentiment_dataset.get_test_set()),
+        "Rare Words": get_rare_words_examples(data_manager.sentiment_dataset.get_test_set(), data_manager.sentiment_dataset)
+    }
+
+    for subset_name, subset_indices in special_subsets.items():
+        subset_data = [data_manager.sentiment_dataset.get_test_set()[i] for i in subset_indices]
+        subset_dataset = OnlineDataset(subset_data, data_manager.sent_func, data_manager.sent_func_kwargs)
+        subset_iterator = DataLoader(subset_dataset, batch_size=64, shuffle=False)
+
+        subset_loss, subset_acc = evaluate(model, subset_iterator, criterion)
+        print(f"{subset_name} Results:")
+        print(f"Loss: {subset_loss:.4f}, Accuracy: {subset_acc:.4f}")
+        print("-" * 50)
 
 
 if __name__ == '__main__':
